@@ -20,6 +20,7 @@ mod expression;
 mod helpers;
 mod pattern;
 mod progress;
+mod recovery;
 mod statement;
 #[cfg(test)]
 mod tests;

@@ -2,11 +2,9 @@ use ruff_python_ast::{self as ast, Expr, ExprContext, Number, Operator, Pattern,
 use ruff_text_size::{Ranged, TextSize};
 
 use crate::parser::progress::ParserProgress;
-use crate::parser::{Parser, SequenceMatchPatternParentheses};
+use crate::parser::{recovery, Parser, RecoveryContextKind, SequenceMatchPatternParentheses};
 use crate::token_set::TokenSet;
 use crate::{ParseErrorType, Tok, TokenKind};
-
-use super::RecoveryContextKind;
 
 /// The set of tokens that can start a literal pattern.
 const LITERAL_PATTERN_START_SET: TokenSet = TokenSet::new([
@@ -145,14 +143,7 @@ impl<'src> Parser<'src> {
                     ParseErrorType::OtherError("invalid lhs pattern".to_string()),
                     &lhs,
                 );
-
-                // In case it's not a valid LHS pattern, we'll use an empty `Expr::Name`
-                // to indicate that.
-                Box::new(Expr::Name(ast::ExprName {
-                    id: String::new(),
-                    ctx: ExprContext::Invalid,
-                    range: lhs.range(),
-                }))
+                Box::new(recovery::pattern_to_expr(lhs))
             };
 
             let rhs_pattern = self.parse_match_pattern_lhs();
@@ -177,14 +168,7 @@ impl<'src> Parser<'src> {
                     ParseErrorType::OtherError("invalid rhs pattern".to_string()),
                     rhs_pattern.range(),
                 );
-
-                // In case it's not a valid RHS pattern, we'll use an empty `Expr::Name`
-                // to indicate that.
-                Box::new(Expr::Name(ast::ExprName {
-                    id: String::new(),
-                    ctx: ExprContext::Invalid,
-                    range: rhs_pattern.range(),
-                }))
+                Box::new(recovery::pattern_to_expr(rhs_pattern))
             };
 
             let range = self.node_range(start);
@@ -241,11 +225,7 @@ impl<'src> Parser<'src> {
                             ParseErrorType::OtherError("invalid mapping pattern key".to_string()),
                             &pattern,
                         );
-                        Expr::Name(ast::ExprName {
-                            id: String::new(),
-                            ctx: ExprContext::Invalid,
-                            range: pattern.range(),
-                        })
+                        recovery::pattern_to_expr(pattern)
                     }
                 };
                 keys.push(key);
@@ -612,7 +592,7 @@ impl<'src> Parser<'src> {
                 if has_seen_keyword_pattern && has_seen_pattern {
                     parser.add_error(
                         ParseErrorType::OtherError(
-                            "pattern not allowed after keyword pattern".to_string(),
+                            "positional patterns follow keyword patterns".to_string(),
                         ),
                         parser.node_range(pattern_start),
                     );
@@ -626,7 +606,9 @@ impl<'src> Parser<'src> {
 
         let cls = match cls {
             Pattern::MatchAs(ast::PatternMatchAs {
-                name: Some(ident), ..
+                pattern: None,
+                name: Some(ident),
+                ..
             }) => Box::new(Expr::Name(if ident.is_valid() {
                 ast::ExprName {
                     range: ident.range(),
@@ -650,11 +632,7 @@ impl<'src> Parser<'src> {
                     ParseErrorType::OtherError("invalid value for a class pattern".to_string()),
                     &pattern,
                 );
-                Box::new(Expr::Name(ast::ExprName {
-                    id: String::new(),
-                    ctx: ExprContext::Invalid,
-                    range: pattern.range(),
-                }))
+                Box::new(recovery::pattern_to_expr(pattern))
             }
         };
 
