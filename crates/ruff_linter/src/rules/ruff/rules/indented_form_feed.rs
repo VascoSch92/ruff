@@ -46,26 +46,23 @@ impl Violation for IndentedFormFeed {
 const FORM_FEED: u8 = b'\x0c';
 const SPACE: u8 = b' ';
 const TAB: u8 = b'\t';
+const NEW_LINE: u8 = b'\n';
+
 
 /// RUF054
 pub(crate) fn indented_form_feed(line: &Line) -> Option<Diagnostic> {
-    let index_relative_to_line = memchr(FORM_FEED, line.as_bytes())?;
+    let line_as_byte = line.as_bytes();
 
-    if index_relative_to_line == 0 {
-        return None;
-    }
+   for j in 1..line_as_byte.len() {
+       if line_as_byte[j] == FORM_FEED {
+           if line_as_byte[j - 1] == SPACE || line_as_byte[j - 1] == TAB {
+               let relative_index = u32::try_from(j).ok()?;
+               let absolute_index = line.start() + TextSize::new(relative_index);
+               let range = TextRange::at(absolute_index, 1.into());
 
-    if line[..index_relative_to_line]
-        .as_bytes()
-        .iter()
-        .any(|byte| *byte != SPACE && *byte != TAB)
-    {
-        return None;
-    }
-
-    let relative_index = u32::try_from(index_relative_to_line).ok()?;
-    let absolute_index = line.start() + TextSize::new(relative_index);
-    let range = TextRange::at(absolute_index, 1.into());
-
-    Some(Diagnostic::new(IndentedFormFeed, range))
+               return Some(Diagnostic::new(IndentedFormFeed, range));
+           }
+       }
+   }
+    None
 }
