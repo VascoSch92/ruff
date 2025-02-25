@@ -1,4 +1,4 @@
-use memchr::memchr;
+use memchr::{memchr, memchr_iter};
 
 use ruff_diagnostics::{Diagnostic, Violation};
 use ruff_macros::{derive_message_formats, ViolationMetadata};
@@ -48,21 +48,29 @@ const SPACE: u8 = b' ';
 const TAB: u8 = b'\t';
 const NEW_LINE: u8 = b'\n';
 
-
 /// RUF054
 pub(crate) fn indented_form_feed(line: &Line) -> Option<Diagnostic> {
+    println!("{:?}", line);
     let line_as_byte = line.as_bytes();
+    for (i, a) in line.split(|char| char == '\n').enumerate() {
+        println!("{:?}", a);
+        println!("{} ----", i);
+    }
 
-   for j in 1..line_as_byte.len() {
-       if line_as_byte[j] == FORM_FEED {
-           if line_as_byte[j - 1] == SPACE || line_as_byte[j - 1] == TAB {
-               let relative_index = u32::try_from(j).ok()?;
-               let absolute_index = line.start() + TextSize::new(relative_index);
-               let range = TextRange::at(absolute_index, 1.into());
+    for (i, logical_line) in line_as_byte.split(|&b| b == NEW_LINE).enumerate() {
+        for j in 1..logical_line.len() {
+            if logical_line[j] == FORM_FEED {
+                if (i == 0 && (logical_line[j - 1] == SPACE || logical_line[j - 1] == TAB))
+                    || logical_line[j - 1] == TAB
+                {
+                    let relative_index = u32::try_from(i + j).ok()?;
+                    let absolute_index = line.start() + TextSize::new(relative_index);
+                    let range = TextRange::at(absolute_index, 1.into());
 
-               return Some(Diagnostic::new(IndentedFormFeed, range));
-           }
-       }
-   }
+                    return Some(Diagnostic::new(IndentedFormFeed, range));
+                }
+            }
+        }
+    }
     None
 }
