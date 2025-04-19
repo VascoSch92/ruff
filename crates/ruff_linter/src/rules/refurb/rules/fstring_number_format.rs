@@ -1,6 +1,7 @@
-use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
+use ruff_diagnostics::{Applicability, Diagnostic, Edit, Fix, FixAvailability, Violation};
 use ruff_macros::{derive_message_formats, ViolationMetadata};
-use ruff_python_ast::{self as ast, Expr, ExprCall};
+use ruff_python_ast::{self as ast, Expr, ExprCall, ExprName, };
+use ruff_python_semantic::analyze::type_inference::{NumberLike, PythonType, ResolvedPythonType};
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
@@ -102,6 +103,24 @@ pub(crate) fn fstring_number_format(checker: &Checker, subscript: &ast::ExprSubs
         return;
     };
 
+    // float and complex number literal must be ignored by the rule
+    if matches!(
+        ResolvedPythonType::from(arg),
+        ResolvedPythonType::Atom(PythonType::Number(NumberLike::Float | NumberLike::Complex))) {
+        return;
+    } else if matches!(
+        arg,
+        Expr::Call(ExprCall{
+            func: Expr::Name(ExprName {
+                id: ExprNameId::Name(name),
+                ..
+            }),
+            ..
+        }) if name == "complex"
+    ){
+
+    }
+    println!("{:?}", checker.semantic().resolve_qualified_name());
     let Some(id) = checker.semantic().resolve_builtin_symbol(func) else {
         return;
     };
@@ -125,19 +144,32 @@ pub(crate) fn fstring_number_format(checker: &Checker, subscript: &ast::ExprSubs
         None
     };
 
+    let applicability: Applicability = match ResolvedPythonType::from(arg) {
+        ResolvedPythonType::Atom(PythonType::Number(NumberLike::Integer)) => {
+            // if we can assert that the integer is positive, then the fix is safe
+            Applicability::Safe
+        }
+        ResolvedPythonType::Atom(PythonType::Number(NumberLike::Bool)) => Applicability::Safe,
+        _ => Applicability::Unsafe,
+    };
+
+    let replacement_range = subscript.range();
     let mut diagnostic = Diagnostic::new(
         FStringNumberFormat {
             replacement: replacement.as_deref().map(SourceCodeSnippet::from_str),
             base,
         },
-        subscript.range(),
+        replacement_range,
     );
 
     if let Some(replacement) = replacement {
-        diagnostic.set_fix(Fix::safe_edit(Edit::range_replacement(
-            replacement,
-            subscript.range(),
-        )));
+        diagnostic.set_fix(Fix::applicable_edit(
+            Edit::range_replacement(
+                replacement,
+                replacement_range,
+            ),
+            applicability,
+        ));
     }
 
     checker.report_diagnostic(diagnostic);
