@@ -790,6 +790,7 @@ mod tests {
     use crate::linter::check_path;
     use crate::message::Message;
     use crate::registry::Rule;
+    use ruff_python_parser::semantic_errors::SemanticSyntaxErrorKind;
     use crate::source_kind::SourceKind;
     use crate::test::{assert_notebook_path, test_contents, TestedNotebook};
     use crate::{assert_messages, directives, settings, Locator};
@@ -1070,6 +1071,22 @@ mod tests {
         Path::new("load_before_global_declaration.py")
     )]
     fn test_syntax_errors(rule: Rule, path: &Path) -> Result<()> {
+        let snapshot = path.to_string_lossy().to_string();
+        let path = Path::new("resources/test/fixtures/syntax_errors").join(path);
+        let messages = test_contents_syntax_errors(
+            &SourceKind::Python(std::fs::read_to_string(&path)?),
+            &path,
+            &settings::LinterSettings::for_rule(rule),
+        );
+        insta::with_settings!({filters => vec![(r"\\", "/")]}, {
+            assert_messages!(snapshot, messages);
+        });
+
+        Ok(())
+    }
+
+    #[test_case(SemanticSyntaxErrorKind::DuplicateMatchKey, Path::new("duplicate_match_key.py"))]
+    fn test_semantic_syntax_errors(rule: SemanticSyntaxErrorKind, path: &Path) -> Result<()> {
         let snapshot = path.to_string_lossy().to_string();
         let path = Path::new("resources/test/fixtures/syntax_errors").join(path);
         let messages = test_contents_syntax_errors(
